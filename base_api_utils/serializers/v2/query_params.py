@@ -32,16 +32,18 @@ def should_expand(expand_tree, relations_tree, attr, verify_relation):
 
 
 def normalize_none(tree):
-    def walk(node):
-        if "none" in node:
-            node.clear()
-            return
-        for child in list(node.values()):
-            if isinstance(child, dict):
-                walk(child)
+    """No-op — the ``none`` keyword is a natural sentinel.
 
-    if isinstance(tree, dict):
-        walk(tree)
+    ``{"none": {}}`` is truthy, so ``_ensure_defaults`` won't fill in
+    defaults.  ``"none"`` matches no real field or relation name, so
+    ``_filter_local_fields`` and ``should_expand`` exclude everything.
+
+    Works at any level:
+    - ``?relations=none`` → blocks all expansion at the current serializer
+    - ``?relations=media_upload.none`` → blocks all nested expansion within
+      ``media_upload`` (child serializer sees ``{"none": {}}``)
+    - ``?fields=none`` → strips all non-relation fields
+    """
     return tree
 
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from rest_framework import serializers
 
-from .query_params import should_expand, subtree
+from .query_params import has_key, should_expand, subtree
 
 
 @dataclass(frozen=True)
@@ -56,9 +56,17 @@ class One2ManyExpandSerializer(IExpandSerializer):
     def apply(self, *, fields: dict, mapping: ExpandMapping, context: dict) -> None:
         attr = mapping.attribute
         fk = mapping.fk_field
+        relations_tree = context.get("relations_tree")
+
+        # Relation blocked by ?relations= — remove entirely
+        if mapping.verify_relation and not has_key(relations_tree, attr):
+            fields.pop(attr, None)
+            fields.pop(fk, None)
+            return
+
         do_expand = should_expand(
             context.get("expand_tree", {}),
-            context.get("relations_tree"),
+            relations_tree,
             attr,
             mapping.verify_relation,
         )
@@ -82,9 +90,16 @@ class Many2OneExpandSerializer(IExpandSerializer):
     # to-many: keep same key; not expanded => list[int]; expanded => list[object]
     def apply(self, *, fields: dict, mapping: ExpandMapping, context: dict) -> None:
         attr = mapping.attribute
+        relations_tree = context.get("relations_tree")
+
+        # Relation blocked by ?relations= — remove entirely
+        if mapping.verify_relation and not has_key(relations_tree, attr):
+            fields.pop(attr, None)
+            return
+
         do_expand = should_expand(
             context.get("expand_tree", {}),
-            context.get("relations_tree"),
+            relations_tree,
             attr,
             mapping.verify_relation,
         )

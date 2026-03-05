@@ -18,7 +18,7 @@ Three query parameters control serialization:
 |-----------|---------|----------------------|
 | `?fields=` | Which fields to include | All `allowed_fields` |
 | `?expand=` | Which relations to expand into objects | None (show IDs only) |
-| `?relations=` | Which relations are permitted to expand | All `allowed_relations` |
+| `?relations=` | Which relations to include in the response | All `allowed_relations` |
 
 The system is built on four components:
 
@@ -46,6 +46,7 @@ Each key is a field name. Nested dicts represent child fields. This tree is slic
 | `None` | "Not specified — use all defaults for this serializer" |
 | `{}` (empty dict) | Same as `None` after `_ensure_defaults` runs |
 | `{"id": {}, "name": {}}` | "Only include these specific fields/relations" |
+| `{"none": {}}` | "Block everything — truthy (so defaults not filled), but `none` matches no real field/relation" |
 
 ### Request Lifecycle
 
@@ -658,9 +659,9 @@ GET /api/items/?fields=id,media_upload.id,media_upload.url&expand=media_upload
 
 The dot notation `media_upload.id,media_upload.url` restricts the nested serializer to only those fields.
 
-### Block expansion with ?relations=
+### Control relation visibility with ?relations=
 
-When `verify_relation: True` is set in `expand_mappings`, the client must include the relation in `?relations=` for expansion to work. If `?relations=` is omitted entirely, all `allowed_relations` are permitted by default.
+When `verify_relation: True` is set in `expand_mappings`, the `?relations=` parameter controls which relation fields appear in the response at all. Relations not listed are **removed entirely** — both the expanded object and the FK/ID field. If `?relations=` is omitted entirely, all `allowed_relations` are included by default.
 
 ```
 GET /api/items/?expand=media_upload,tags&relations=media_upload
@@ -672,14 +673,51 @@ GET /api/items/?expand=media_upload,tags&relations=media_upload
     "name": "Widget A",
     "quantity": 2,
     "media_upload": {"id": 1, "url": "...", "owner_id": 3, "created": "...", "modified": "..."},
-    "tags": [1, 2],
     "created": "...",
     "modified": "..."
   }
 ]
 ```
 
-`media_upload` is expanded (listed in both `expand` and `relations`). `tags` stays as IDs (listed in `expand` but NOT in `relations`).
+`media_upload` is expanded (listed in both `expand` and `relations`). `tags` is **removed entirely** — not in `relations`, so neither the ID list nor the expanded objects appear.
+
+### Block nested relations with `.none`
+
+When expanding a relation, its child serializer fills in its own `allowed_relations` by default — so `?expand=media_upload,media_upload.owner` works without listing `owner` in `?relations=`. To expand a parent but **block all its nested relations**, use the `.none` suffix:
+
+```
+GET /api/items/?expand=media_upload,media_upload.owner&relations=media_upload.none
+```
+```json
+[
+  {
+    "id": 1,
+    "media_upload": {
+      "id": 1,
+      "url": "https://example.com/a.png",
+      "owner_id": 3,
+      "created": "...",
+      "modified": "..."
+    },
+    "tags": [1, 2],
+    "...": "..."
+  }
+]
+```
+
+Despite requesting `?expand=media_upload.owner`, the `owner` is NOT expanded — `relations=media_upload.none` blocks all nested relations within `media_upload`. The `owner_id` field remains visible instead.
+
+**How it works:** `parse_tree("media_upload.none")` produces `{"media_upload": {"none": {}}}`. The root-level `normalize_none` only clears the tree when `"none"` appears at root level (e.g., `?relations=none`). When `"none"` is nested, it's preserved. The child serializer receives `relations_tree = {"none": {}}` — a truthy dict that prevents `_ensure_defaults` from filling in the child's `allowed_relations`. Since `"none"` isn't a real relation name, no nested expansion is permitted.
+
+**Contrast with `?relations=media_upload`** (no `.none`): the child serializer receives `relations_tree = {}` (empty dict), which is falsy, so `_ensure_defaults` fills in `allowed_relations = ["owner"]` — allowing `owner` to expand.
+
+The same `.none` pattern works with `?fields=` to block all nested fields:
+
+```
+GET /api/items/?fields=id,media_upload.none&expand=media_upload&relations=media_upload
+```
+
+This expands `media_upload` but strips all its fields — the child serializer's `_filter_local_fields` sees only `{"none": {}}` in `fields_tree`, and since `"none"` matches no real field names, everything is filtered out.
 
 ### All three combined
 
@@ -912,7 +950,7 @@ That said, the DRF port adds real value that the PHP version lacks: **explicit O
 - Clients fetch only what they need — smaller payloads, fewer round trips
 - ORM optimization is automatic — no manual `select_related` per endpoint
 - Recursive: the same pattern works at any nesting depth
-- `?relations=` acts as a server-side gate — even if a client sends `?expand=secret_relation`, it won't work unless `allowed_relations` permits it
+- `?relations=` acts as a server-side gate — relations not listed are removed entirely (both expanded objects and FK/ID fields). Even `?expand=secret_relation` won't work unless `allowed_relations` permits it
 
 ### Trade-offs
 - Serializer setup has three parallel declarations (`allowed_fields`, `allowed_relations`, `expand_mappings` plus `Meta.fields`) that must stay in sync

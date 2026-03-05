@@ -42,6 +42,18 @@ Generates dotted ORM paths:
 
 Serializer applies nested `fields` to child serializers.
 
+### The `none` Sentinel
+
+`none` blocks all fields or relations at a given level:
+
+```
+?fields=none              # Strip all non-relation fields
+?relations=none           # Block all relation expansion
+?relations=media_upload.none  # Expand media_upload but block its nested relations
+```
+
+`{"none": {}}` is truthy (prevents default filling) but matches no real name.
+
 ### Common Patterns
 
 | Use Case | Query Params |
@@ -50,6 +62,8 @@ Serializer applies nested `fields` to child serializers.
 | Include relation | `?expand=relation&relations=relation` |
 | Deep expansion | `?expand=a.b.c&relations=a.b.c` |
 | Selective nesting | `?fields=id,rel(id,name)&expand=rel&relations=rel` |
+| Block nested relations | `?expand=rel&relations=rel.none` |
+| Block all expansion | `?relations=none` |
 
 ### ViewSet Implementation
 
