@@ -41,7 +41,7 @@ Django REST Framework sample demonstrating advanced serializer patterns for nest
 - **Configuration:** `summitstyle/settings.py`
 - **Entry Point:** `manage.py`
 - **Dependencies:** `requirements.txt`
-- **Tests:** `api/tests/test_recursive_expand.py`
+- **Tests:** `api/tests/test_query_params.py` (main suite), `api/tests/test_recursive_expand.py`
 - **Setup Script:** `start.sh`
 
 ## Development Commands
