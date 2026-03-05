@@ -83,7 +83,7 @@ class One2ManyExpandSerializer(IExpandSerializer):
             fields_tree = context.get("fields_tree")
             include_id = (fields_tree is None) or (fk in fields_tree)
             if include_id and fk not in fields:
-                fields[fk] = serializers.IntegerField(source=fk, read_only=True)
+                fields[fk] = serializers.IntegerField(read_only=True)
 
 
 class Many2OneExpandSerializer(IExpandSerializer):

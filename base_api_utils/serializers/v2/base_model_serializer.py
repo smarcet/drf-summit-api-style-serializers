@@ -2,9 +2,9 @@ import copy
 
 from rest_framework import serializers
 
+from ..timestamp_field import TimestampField
 from .expands import ExpandMapping
 from .query_params import normalize_none, parse_tree
-from ..timestamp_field import TimestampField
 
 
 class AbstractSerializer:
@@ -71,10 +71,19 @@ class AbstractSerializer:
         for cls in reversed(self.__class__.mro()):
             af = getattr(cls, "allowed_fields", None)
             if af is not None:
+                # '__all__' means no filtering — same as None/omitted
+                if af == "__all__":
+                    return None
                 saw_any = True
                 for f in af:
                     if f not in merged:
                         merged.append(f)
+        # Auto-merge allowed_relations so they don't need to be
+        # listed in allowed_fields separately.
+        if saw_any:
+            for r in self._merged_allowed_relations():
+                if r not in merged:
+                    merged.append(r)
         return merged if saw_any else None
 
     def _merged_allowed_relations(self):
@@ -158,3 +167,16 @@ class BaseModelSerializer(AbstractSerializer, serializers.ModelSerializer):
     id = serializers.ReadOnlyField(source="pk")
     created = TimestampField(read_only=True, required=False)
     modified = TimestampField(read_only=True, required=False)
+
+    class Meta:
+        fields = "__all__"
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        meta = getattr(cls, "Meta", None)
+        if (
+            meta is not None
+            and "fields" not in meta.__dict__
+            and "exclude" not in meta.__dict__
+        ):
+            meta.fields = "__all__"

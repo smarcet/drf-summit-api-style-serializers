@@ -4,14 +4,14 @@
 
 ### Core Components
 
-Every serializer declares three attributes:
+Every serializer declares up to three attributes. `Meta.fields` is auto-set to `"__all__"` by `BaseModelSerializer` — only `Meta.model` is needed. Relations from `allowed_relations` are auto-merged into the allowed field pool.
 
 ```python
 class ItemSerializer(BaseModelSerializer):
-    # 1. Fields allowed in ?fields= param
+    # 1. Non-relation fields allowed in ?fields= param (relations auto-merged)
     allowed_fields = ["id", "name", "quantity", "media_upload_id"]
 
-    # 2. Relations allowed in ?relations= param (must also be in allowed_fields)
+    # 2. Relations allowed in ?relations= param (auto-merged into allowed fields)
     allowed_relations = ["media_upload", "tags"]
 
     # 3. How to expand each relation
@@ -25,6 +25,9 @@ class ItemSerializer(BaseModelSerializer):
             "orm": {"bulk_prefetch": "media_upload"},  # Optimization strategy
         }
     }
+
+    class Meta:
+        model = Item  # Meta.fields auto-set to '__all__'
 ```
 
 ### Expansion Types

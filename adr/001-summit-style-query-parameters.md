@@ -76,7 +76,13 @@ Each key is a field name. Nested dicts represent child fields. This tree is slic
 
 ### Step 1: Define the serializer
 
-Every serializer declares three things:
+Every serializer declares up to three things:
+
+- **`allowed_fields`** — non-relation fields the client can request via `?fields=`. Relations from `allowed_relations` are auto-merged, so don't list them here. Set to `None` (or omit) to allow all fields (same behavior as the PHP Summit API). Set to `"__all__"` as an explicit alias for "allow everything".
+- **`allowed_relations`** — relations the client can expand or include. Auto-merged into the allowed field pool.
+- **`expand_mappings`** — how to expand each relation (serializer, ORM strategy, etc.)
+
+`Meta.fields` is **not needed** — `BaseModelSerializer` auto-sets `Meta.fields = "__all__"` via `__init_subclass__`. DRF discovers all model fields and declared fields automatically. The `allowed_fields` / `allowed_relations` system handles Summit-style filtering on top.
 
 ```python
 from rest_framework import serializers
@@ -92,17 +98,16 @@ class OwnerSerializer(BaseModelSerializer):
 
     class Meta:
         model = Owner
-        fields = ["id", "name"]
 
 
 class MediaUploadSerializer(BaseModelSerializer):
     # Declare the nested serializer field (DRF needs this for expansion)
     owner = OwnerSerializer(read_only=True, required=False)
 
-    # 1. Fields the client can request via ?fields=
+    # 1. Fields the client can request via ?fields= (relations auto-merged from allowed_relations)
     allowed_fields = ["id", "url", "owner_id", "created", "modified"]
 
-    # 2. Relations the client can expand (must also appear in Meta.fields)
+    # 2. Relations the client can expand (auto-merged into allowed fields)
     allowed_relations = ["owner"]
 
     # 3. How to expand each relation
@@ -119,7 +124,6 @@ class MediaUploadSerializer(BaseModelSerializer):
 
     class Meta:
         model = MediaUpload
-        fields = ["id", "url", "owner_id", "owner", "created", "modified"]
 
 
 class ItemSerializer(BaseModelSerializer):
@@ -128,9 +132,10 @@ class ItemSerializer(BaseModelSerializer):
     display_name = serializers.SerializerMethodField()  # Computed field
     expires_at = TimestampField(read_only=True, required=False)  # Calculated timestamp
 
+    # Relations (media_upload, tags) auto-merged from allowed_relations — not listed here
     allowed_fields = [
         "id", "name", "quantity", "media_upload_id",
-        "media_upload", "tags", "display_name", "expires_at", "created", "modified",
+        "display_name", "expires_at", "created", "modified",
     ]
     allowed_relations = ["media_upload", "tags"]
 
@@ -154,10 +159,6 @@ class ItemSerializer(BaseModelSerializer):
 
     class Meta:
         model = Item
-        fields = [
-            "id", "name", "quantity", "media_upload_id",
-            "media_upload", "tags", "display_name", "expires_at", "created", "modified",
-        ]
 
     def get_display_name(self, obj):
         return f"{obj.name} (x{obj.quantity})"
@@ -172,7 +173,7 @@ class ItemSerializer(BaseModelSerializer):
 
 ### Step 3: Add computed fields (SerializerMethodField)
 
-DRF's `SerializerMethodField` works with the query parameter system. Declare the field, add it to `allowed_fields` and `Meta.fields`, and implement the `get_<name>` method:
+DRF's `SerializerMethodField` works with the query parameter system. Declare the field, add it to `allowed_fields`, and implement the `get_<name>` method:
 
 ```python
 class ItemSerializer(BaseModelSerializer):
@@ -181,8 +182,7 @@ class ItemSerializer(BaseModelSerializer):
     allowed_fields = ["id", "name", "display_name", ...]  # ← include here
 
     class Meta:
-        model = Item
-        fields = ["id", "name", "display_name", ...]      # ← and here
+        model = Item  # Meta.fields auto-set to '__all__' by BaseModelSerializer
 
     def get_display_name(self, obj):
         return f"{obj.name} (x{obj.quantity})"
@@ -223,10 +223,7 @@ class ItemViewSet(ExpandQuerysetOptimizationMixin, BaseView):
 class ItemSerializer(BaseModelSerializer):
     tag_count = serializers.IntegerField(read_only=True)  # reads obj.tag_count
 
-    allowed_fields = [..., "tag_count"]  # ← include here
-
-    class Meta:
-        fields = [..., "tag_count"]      # ← and here
+    allowed_fields = [..., "tag_count"]  # ← include here (no Meta.fields needed)
 ```
 
 The DRF `IntegerField` reads the `tag_count` attribute from the model instance — which is the annotation value set by Django's `.annotate()`. No `SerializerMethodField` or `get_tag_count` method needed.
@@ -246,9 +243,7 @@ class ItemViewSet(ExpandQuerysetOptimizationMixin, BaseView):
 class ItemSerializer(BaseModelSerializer):
     has_media = serializers.BooleanField(read_only=True)  # reads obj.has_media
 
-    allowed_fields = [..., "has_media"]
-    class Meta:
-        fields = [..., "has_media"]
+    allowed_fields = [..., "has_media"]  # no Meta.fields needed
 ```
 
 `Q()` expressions used as annotations produce boolean values. The `BooleanField` reads it directly.
@@ -313,10 +308,7 @@ class Item(models.Model):
 class ItemSerializer(BaseModelSerializer):
     expires_at = TimestampField(read_only=True, required=False)
 
-    allowed_fields = [..., "expires_at"]  # ← include here
-
-    class Meta:
-        fields = [..., "expires_at"]      # ← and here
+    allowed_fields = [..., "expires_at"]  # ← include here (no Meta.fields needed)
 ```
 
 The field behaves like any other field for query parameter filtering:
@@ -846,10 +838,10 @@ protected static $expand_mappings = [
 ];
 ```
 
-**DRF port (Python)** — similar structure with extra DRF-specific plumbing:
+**DRF port (Python)** — similar structure, streamlined by auto-merging relations and auto-setting `Meta.fields`:
 
 ```python
-allowed_fields = ["id", "name", "media_upload_id"]
+allowed_fields = ["id", "name", "media_upload_id"]  # relations auto-merged from allowed_relations
 allowed_relations = ["media_upload", "tags"]
 expand_mappings = {
     "media_upload": {
@@ -861,12 +853,18 @@ expand_mappings = {
         "orm": {"bulk_prefetch": "media_upload"},   # no PHP equivalent
     }
 }
+
+class Meta:
+    model = Item  # Meta.fields auto-set to '__all__' by BaseModelSerializer
 ```
 
 Key differences:
 
 - PHP has `$array_mappings` that handle both field extraction AND type coercion (`json_int`, `datetime_epoch`, etc.). DRF handles this natively via its field system, so the port doesn't need this layer.
 - PHP uses a **SerializerRegistry** singleton — you never specify the serializer class in `expand_mappings`. The registry auto-resolves `Entity → Serializer` by class name. The DRF port requires explicitly passing `"serializer": MediaUploadSerializer`. More verbose, but also more transparent.
+- **PHP doesn't list allowed fields by default** — omitting `$allowed_fields` means "allow all". The DRF port matches this: `allowed_fields = None` (or omitted) allows all fields. `allowed_fields = "__all__"` is an explicit alias.
+- **Relations don't need to be listed in `allowed_fields`** — `BaseModelSerializer` auto-merges `allowed_relations` into the allowed field pool, matching PHP's behavior where relations and fields are separate declarations.
+- **`Meta.fields` is auto-set** — `BaseModelSerializer.__init_subclass__` injects `Meta.fields = "__all__"` on child classes, so only `Meta.model` is needed. DRF discovers all model fields and declared fields automatically.
 - PHP's `expand_mappings` include a `getter` string (e.g., `'getTicketTypes'`) which is called via `$entity->{$this->getter}()`. The DRF port uses DRF's built-in field source resolution instead of magic string dispatch.
 - The `"orm"` key in the DRF port has no PHP equivalent — Doctrine handles lazy loading differently (no `select_related`/`prefetch_related` dance needed).
 
@@ -1026,6 +1024,6 @@ That said, the DRF port adds real value that the PHP version lacks: **explicit O
 - `?relations=` acts as a server-side gate — relations not listed are removed entirely (both expanded objects and FK/ID fields). Even `?expand=secret_relation` won't work unless `allowed_relations` permits it
 
 ### Trade-offs
-- Serializer setup has three parallel declarations (`allowed_fields`, `allowed_relations`, `expand_mappings` plus `Meta.fields`) that must stay in sync
+- Serializer setup has three declarations (`allowed_fields`, `allowed_relations`, `expand_mappings`) that must stay in sync — though relations are auto-merged into allowed fields and `Meta.fields` is auto-set, reducing duplication
 - The tree data structure (`None` vs `{}`) has subtle semantics — see the codebase's `_ensure_defaults` and `_child_tree` for how defaults are resolved
 - DRF's `field.bind()` replaces child serializer context with the parent's, requiring the `_own_context` / `_original_context` workaround to preserve each serializer's own trees

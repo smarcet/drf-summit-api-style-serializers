@@ -17,7 +17,6 @@ class OwnerSerializer(BaseModelSerializer):
 
     class Meta:
         model = Owner
-        fields = ["id", "name"]
 
 
 class MediaUploadSerializer(BaseModelSerializer):
@@ -38,7 +37,6 @@ class MediaUploadSerializer(BaseModelSerializer):
 
     class Meta:
         model = MediaUpload
-        fields = ["id", "url", "owner_id", "owner", "created", "modified"]
 
 
 class TagSerializer(BaseModelSerializer):
@@ -48,7 +46,6 @@ class TagSerializer(BaseModelSerializer):
 
     class Meta:
         model = Tag
-        fields = ["id", "name"]
 
 
 class ItemSerializer(BaseModelSerializer):
@@ -64,8 +61,6 @@ class ItemSerializer(BaseModelSerializer):
         "name",
         "quantity",
         "media_upload_id",
-        "media_upload",
-        "tags",
         "display_name",
         "tag_count",
         "has_media",
@@ -95,20 +90,6 @@ class ItemSerializer(BaseModelSerializer):
 
     class Meta:
         model = Item
-        fields = [
-            "id",
-            "name",
-            "quantity",
-            "media_upload_id",
-            "media_upload",
-            "tags",
-            "display_name",
-            "tag_count",
-            "has_media",
-            "expires_at",
-            "created",
-            "modified",
-        ]
 
     def get_display_name(self, obj):
         return f"{obj.name} (x{obj.quantity})"

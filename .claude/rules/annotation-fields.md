@@ -15,7 +15,7 @@ class ItemViewSet(ExpandQuerysetOptimizationMixin, BaseView):
         )
 ```
 
-2. **Declare in serializer:**
+2. **Declare in serializer and include in `allowed_fields`:**
 
 ```python
 class ItemSerializer(BaseModelSerializer):
@@ -23,14 +23,9 @@ class ItemSerializer(BaseModelSerializer):
     has_media = serializers.BooleanField(read_only=True)
 
     allowed_fields = ["id", "name", "tag_count", "has_media", ...]
-```
 
-3. **Include in Meta.fields:**
-
-```python
-class Meta:
-    model = Item
-    fields = ["id", "name", "tag_count", "has_media", ...]
+    class Meta:
+        model = Item  # Meta.fields auto-set to '__all__' by BaseModelSerializer
 ```
 
 ### Rules
@@ -39,6 +34,7 @@ class Meta:
 - Include in `allowed_fields` for query parameter filtering
 - NOT in `allowed_relations` - annotations are fields, not relations
 - Annotations don't require `expand_mappings` - they're pre-computed
+- No `Meta.fields` needed - auto-set to `'__all__'` by `BaseModelSerializer`
 
 ### Common Annotations
 
