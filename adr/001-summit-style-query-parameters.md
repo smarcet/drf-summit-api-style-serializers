@@ -126,10 +126,11 @@ class ItemSerializer(BaseModelSerializer):
     media_upload = MediaUploadSerializer(read_only=True, required=False)
     tags = TagSerializer(many=True, read_only=True, required=False)
     display_name = serializers.SerializerMethodField()  # Computed field
+    expires_at = TimestampField(read_only=True, required=False)  # Calculated timestamp
 
     allowed_fields = [
         "id", "name", "quantity", "media_upload_id",
-        "media_upload", "tags", "display_name", "created", "modified",
+        "media_upload", "tags", "display_name", "expires_at", "created", "modified",
     ]
     allowed_relations = ["media_upload", "tags"]
 
@@ -155,7 +156,7 @@ class ItemSerializer(BaseModelSerializer):
         model = Item
         fields = [
             "id", "name", "quantity", "media_upload_id",
-            "media_upload", "tags", "display_name", "created", "modified",
+            "media_upload", "tags", "display_name", "expires_at", "created", "modified",
         ]
 
     def get_display_name(self, obj):
@@ -270,7 +271,75 @@ Annotation fields behave identically to model fields and `SerializerMethodField`
 
 **Prefer annotations** for anything the database can compute — they scale to any result set size without additional queries. Use `SerializerMethodField` for presentation logic that doesn't involve database aggregation.
 
-### Step 5: Configure ORM optimization
+### Step 5: Custom field types (TimestampField)
+
+`BaseModelSerializer` declares `created` and `modified` as `TimestampField` — a custom DRF field that converts Python `datetime` objects to Unix epoch integers on output and accepts epoch integers on input:
+
+```python
+# base_api_utils/serializers/timestamp_field.py
+class TimestampField(serializers.Field):
+    def to_internal_value(self, data):
+        return datetime.fromtimestamp(int(data), tz=timezone.utc)
+
+    def to_representation(self, value):
+        return int(time.mktime(value.timetuple()))
+```
+
+```python
+# base_api_utils/serializers/v2/base_model_serializer.py
+class BaseModelSerializer(AbstractSerializer, serializers.ModelSerializer):
+    id = serializers.ReadOnlyField(source="pk")
+    created = TimestampField(read_only=True, required=False)
+    modified = TimestampField(read_only=True, required=False)
+```
+
+All serializers inheriting from `BaseModelSerializer` automatically serialize `created` and `modified` as epoch integers (e.g., `1741132800`) instead of ISO 8601 strings. This matches the original PHP Summit API's `datetime_epoch` type coercion.
+
+#### Using TimestampField with calculated model properties
+
+`TimestampField` works with any model attribute that returns a `datetime`. For computed values, declare a `@property` on the model and a `TimestampField` on the serializer:
+
+```python
+# models.py — computed property returns a datetime
+class Item(models.Model):
+    created = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def expires_at(self):
+        from datetime import timedelta
+        return self.created + timedelta(days=30)
+
+# serializers.py — TimestampField reads the property, outputs epoch int
+class ItemSerializer(BaseModelSerializer):
+    expires_at = TimestampField(read_only=True, required=False)
+
+    allowed_fields = [..., "expires_at"]  # ← include here
+
+    class Meta:
+        fields = [..., "expires_at"]      # ← and here
+```
+
+The field behaves like any other field for query parameter filtering:
+- **Default (no `?fields=`)** — included in the response as an epoch integer
+- **`?fields=id,expires_at`** — included (explicitly requested)
+- **`?fields=id,name`** — excluded (not requested)
+
+No `expand_mappings` entry is needed — timestamp fields are not relations.
+
+#### Comparison with PHP's type coercion
+
+The PHP original handles this via `$array_mappings` type suffixes:
+
+```php
+protected static $array_mappings = [
+    'StartDate' => 'start_date:datetime_epoch',  // ← coercion declared inline
+    'Created'   => 'created:datetime_epoch',
+];
+```
+
+The DRF port achieves the same result by declaring `TimestampField` at the serializer base class level. The PHP approach is more concise (one declaration per field), while the DRF approach uses the standard DRF field system, making it compatible with drf-spectacular schema generation (via `@extend_schema_field`).
+
+### Step 6: Configure ORM optimization
 
 The `"orm"` key in `expand_mappings` tells `ExpandQuerysetOptimizationMixin` how to fetch related data efficiently. There are three strategies, each solving a different problem.
 
@@ -553,13 +622,14 @@ GET /api/items/
     "media_upload_id": 1,
     "tags": [1, 2],
     "display_name": "Widget A (x2)",
-    "created": "2026-03-05T00:00:00Z",
-    "modified": "2026-03-05T00:00:00Z"
+    "expires_at": 1743724800,
+    "created": 1741132800,
+    "modified": 1741132800
   }
 ]
 ```
 
-Relations shown as IDs. All allowed_fields included (including computed fields like `display_name`).
+Relations shown as IDs. All allowed_fields included (including computed fields like `display_name` and `expires_at`). Timestamp fields (`created`, `modified`, `expires_at`) are serialized as Unix epoch integers via `TimestampField`.
 
 ### Select specific fields
 
@@ -587,12 +657,13 @@ GET /api/items/?expand=media_upload
       "id": 1,
       "url": "https://example.com/a.png",
       "owner_id": 3,
-      "created": "2026-03-05T00:00:00Z",
-      "modified": "2026-03-05T00:00:00Z"
+      "created": 1741132800,
+      "modified": 1741132800
     },
     "tags": [1, 2],
-    "created": "2026-03-05T00:00:00Z",
-    "modified": "2026-03-05T00:00:00Z"
+    "expires_at": 1743724800,
+    "created": 1741132800,
+    "modified": 1741132800
   }
 ]
 ```
@@ -615,8 +686,9 @@ GET /api/items/?expand=tags
       {"id": 1, "name": "alpha"},
       {"id": 2, "name": "beta"}
     ],
-    "created": "2026-03-05T00:00:00Z",
-    "modified": "2026-03-05T00:00:00Z"
+    "expires_at": 1743724800,
+    "created": 1741132800,
+    "modified": 1741132800
   }
 ]
 ```
@@ -636,12 +708,13 @@ GET /api/items/?expand=media_upload,media_upload.owner
       "id": 1,
       "url": "https://example.com/a.png",
       "owner": {"id": 3, "name": "Alice"},
-      "created": "2026-03-05T00:00:00Z",
-      "modified": "2026-03-05T00:00:00Z"
+      "created": 1741132800,
+      "modified": 1741132800
     },
     "tags": [1, 2],
-    "created": "2026-03-05T00:00:00Z",
-    "modified": "2026-03-05T00:00:00Z"
+    "expires_at": 1743724800,
+    "created": 1741132800,
+    "modified": 1741132800
   }
 ]
 ```
