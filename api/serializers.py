@@ -1,3 +1,5 @@
+from rest_framework import serializers
+
 from base_api_utils.serializers.v2 import BaseModelSerializer
 from base_api_utils.serializers.v2.expands import (
     Many2OneExpandSerializer,
@@ -51,6 +53,9 @@ class TagSerializer(BaseModelSerializer):
 class ItemSerializer(BaseModelSerializer):
     media_upload = MediaUploadSerializer(read_only=True, required=False)
     tags = TagSerializer(many=True, read_only=True, required=False)
+    display_name = serializers.SerializerMethodField()
+    tag_count = serializers.IntegerField(read_only=True)
+    has_media = serializers.BooleanField(read_only=True)
 
     allowed_fields = [
         "id",
@@ -59,6 +64,9 @@ class ItemSerializer(BaseModelSerializer):
         "media_upload_id",
         "media_upload",
         "tags",
+        "display_name",
+        "tag_count",
+        "has_media",
         "created",
         "modified",
     ]
@@ -91,6 +99,12 @@ class ItemSerializer(BaseModelSerializer):
             "media_upload_id",
             "media_upload",
             "tags",
+            "display_name",
+            "tag_count",
+            "has_media",
             "created",
             "modified",
         ]
+
+    def get_display_name(self, obj):
+        return f"{obj.name} (x{obj.quantity})"

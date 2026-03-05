@@ -41,6 +41,7 @@ class QueryParamTestCase(TestCase):
         self.assertEqual(row["name"], "Widget A")
         self.assertEqual(row["quantity"], 2)
         self.assertEqual(row["media_upload_id"], self.m1.id)
+        self.assertEqual(row["display_name"], "Widget A (x2)")
         self.assertIn("created", row)
         self.assertIn("modified", row)
         # tags as list of IDs (not expanded)
@@ -432,3 +433,82 @@ class QueryParamTestCase(TestCase):
         # no other fields leaked
         self.assertNotIn("name", row)
         self.assertNotIn("quantity", row)
+
+    # ──────────────────────────────────────────────
+    # Group 8: SerializerMethodField (display_name)
+    # ──────────────────────────────────────────────
+
+    def test_method_field_in_default_response(self):
+        """display_name (SerializerMethodField) is present by default."""
+        row = self._get_item(self.i1.id)
+        self.assertEqual(row["display_name"], "Widget A (x2)")
+        row2 = self._get_item(self.i2.id)
+        self.assertEqual(row2["display_name"], "Widget B (x5)")
+
+    def test_method_field_in_fields_subset(self):
+        """?fields=id,display_name → only id and display_name returned."""
+        row = self._get_item(self.i1.id, "?fields=id,display_name")
+        self.assertEqual(row["id"], self.i1.id)
+        self.assertEqual(row["display_name"], "Widget A (x2)")
+        self.assertNotIn("name", row)
+        self.assertNotIn("quantity", row)
+        self.assertNotIn("media_upload_id", row)
+
+    def test_method_field_excluded_by_fields(self):
+        """?fields=id,name → display_name absent (not requested)."""
+        row = self._get_item(self.i1.id, "?fields=id,name")
+        self.assertNotIn("display_name", row)
+        self.assertEqual(row["id"], self.i1.id)
+        self.assertEqual(row["name"], "Widget A")
+
+    def test_method_field_with_expand(self):
+        """?fields=id,display_name&expand=media_upload → both computed field and expansion work."""
+        row = self._get_item(self.i1.id, "?fields=id,display_name&expand=media_upload")
+        self.assertEqual(row["id"], self.i1.id)
+        self.assertEqual(row["display_name"], "Widget A (x2)")
+        self.assertIsInstance(row["media_upload"], dict)
+        self.assertNotIn("name", row)
+        self.assertNotIn("quantity", row)
+
+    # ──────────────────────────────────────────────
+    # Group 9: Queryset annotations (tag_count, has_media)
+    # ──────────────────────────────────────────────
+
+    def test_annotation_int_in_default_response(self):
+        """tag_count (Count annotation) is present by default."""
+        row = self._get_item(self.i1.id)
+        self.assertEqual(row["tag_count"], 2)
+        row2 = self._get_item(self.i2.id)
+        self.assertEqual(row2["tag_count"], 0)
+
+    def test_annotation_bool_in_default_response(self):
+        """has_media (Q annotation with BooleanField) is present by default."""
+        row = self._get_item(self.i1.id)
+        self.assertIs(row["has_media"], True)
+        row2 = self._get_item(self.i2.id)
+        self.assertIs(row2["has_media"], False)
+
+    def test_annotation_in_fields_subset(self):
+        """?fields=id,tag_count,has_media → only requested fields returned."""
+        row = self._get_item(self.i1.id, "?fields=id,tag_count,has_media")
+        self.assertEqual(row["id"], self.i1.id)
+        self.assertEqual(row["tag_count"], 2)
+        self.assertIs(row["has_media"], True)
+        self.assertNotIn("name", row)
+        self.assertNotIn("quantity", row)
+        self.assertNotIn("display_name", row)
+
+    def test_annotation_excluded_by_fields(self):
+        """?fields=id,name → annotation fields absent (not requested)."""
+        row = self._get_item(self.i1.id, "?fields=id,name")
+        self.assertNotIn("tag_count", row)
+        self.assertNotIn("has_media", row)
+
+    def test_annotation_with_expand(self):
+        """?fields=id,tag_count,has_media&expand=media_upload → annotations and expansion coexist."""
+        row = self._get_item(self.i1.id, "?fields=id,tag_count,has_media&expand=media_upload")
+        self.assertEqual(row["id"], self.i1.id)
+        self.assertEqual(row["tag_count"], 2)
+        self.assertIs(row["has_media"], True)
+        self.assertIsInstance(row["media_upload"], dict)
+        self.assertNotIn("name", row)
