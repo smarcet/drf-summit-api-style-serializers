@@ -11,6 +11,18 @@ class AbstractSerializer:
     allowed_relations = []
     expand_mappings = {}
 
+    @property
+    def _own_context(self):
+        """Return this serializer's context, not the parent's.
+
+        DRF's field.bind() replaces self.context with the parent serializer's
+        context dict.  We stash the real one in __init__ so child serializers
+        keep their own expand / fields / relations trees.
+        """
+        if hasattr(self, "_original_context"):
+            return self._original_context
+        return self.context
+
     def __init__(self, *args, **kwargs):
         context = kwargs.get("context") or {}
         request = context.get("request")
@@ -46,23 +58,9 @@ class AbstractSerializer:
                 normalize_none(parse_tree(relations_raw)) if relations_raw else None
             )
 
-        # Store original context before DRF can rebind it
-        # DRF calls field.bind() which replaces field.context with parent.context
+        # Store original context before DRF can rebind it via field.bind()
         self._original_context = context
-
-        # Ensure defaults are set
-        context.setdefault("expand_tree", {})
-        context.setdefault("fields_tree", None)
-        context.setdefault("relations_tree", None)
-
-        if context["fields_tree"] is None:
-            df = self._merged_allowed_fields()
-            if df is not None:
-                context["fields_tree"] = {k: {} for k in df}
-
-        if context["relations_tree"] is None:
-            dr = self._merged_allowed_relations()
-            context["relations_tree"] = {k: {} for k in dr}
+        self._ensure_defaults()
 
         kwargs["context"] = context
         super().__init__(*args, **kwargs)
@@ -102,8 +100,7 @@ class AbstractSerializer:
         return merged
 
     def _ensure_defaults(self):
-        # Use original context to avoid parent mutations from DRF field.bind()
-        ctx = getattr(self, "_original_context", self.context)
+        ctx = self._own_context
         ctx.setdefault("expand_tree", {})
         ctx.setdefault("fields_tree", None)
         ctx.setdefault("relations_tree", None)
@@ -119,14 +116,14 @@ class AbstractSerializer:
             ctx["relations_tree"] = {k: {} for k in dr}
 
     def _filter_local_fields(self, fields):
-        ft = getattr(self, "_original_context", self.context).get("fields_tree")
-        # Treat None or empty dict as "use all fields"
+        ctx = self._own_context
+        ft = ctx.get("fields_tree")
         if ft is None or (isinstance(ft, dict) and len(ft) == 0):
             return fields
         keep = (
             set(ft.keys())
-            | set(self.context.get("expand_tree", {}).keys())
-            | set(self.context.get("relations_tree", {}).keys())
+            | set(ctx.get("expand_tree", {}).keys())
+            | set(ctx.get("relations_tree", {}).keys())
         )
         for k in list(fields.keys()):
             if k not in keep:
@@ -147,11 +144,10 @@ class AbstractSerializer:
                 source=spec.get("source"),
                 verify_relation=bool(spec.get("verify_relation", False)),
             )
-            # Use original context to avoid parent mutations from DRF field.bind()
             expand_type.apply(
                 fields=fields,
                 mapping=mapping,
-                context=getattr(self, "_original_context", self.context),
+                context=self._own_context,
             )
 
         return fields
