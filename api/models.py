@@ -1,16 +1,22 @@
 from django.db import models
 
+
 class Owner(models.Model):
     name = models.CharField(max_length=200)
 
+
 class MediaUpload(models.Model):
     url = models.URLField()
-    owner = models.ForeignKey(Owner, null=True, blank=True, on_delete=models.SET_NULL, related_name="uploads")
+    owner = models.ForeignKey(
+        Owner, null=True, blank=True, on_delete=models.SET_NULL, related_name="uploads"
+    )
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
 
+
 class Tag(models.Model):
     name = models.CharField(max_length=100, unique=True)
+
 
 class Item(models.Model):
     name = models.CharField(max_length=200)
@@ -19,6 +25,13 @@ class Item(models.Model):
     tags = models.ManyToManyField(Tag, blank=True, related_name="items")
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
+
+    @property
+    def expires_at(self):
+        """Artificial calculated field: 30 days after creation."""
+        from datetime import timedelta
+
+        return self.created + timedelta(days=30)
 
     @property
     def media_upload(self):

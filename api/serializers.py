@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from base_api_utils.serializers.timestamp_field import TimestampField
 from base_api_utils.serializers.v2 import BaseModelSerializer
 from base_api_utils.serializers.v2.expands import (
     Many2OneExpandSerializer,
@@ -56,6 +57,7 @@ class ItemSerializer(BaseModelSerializer):
     display_name = serializers.SerializerMethodField()
     tag_count = serializers.IntegerField(read_only=True)
     has_media = serializers.BooleanField(read_only=True)
+    expires_at = TimestampField(read_only=True, required=False)
 
     allowed_fields = [
         "id",
@@ -67,6 +69,7 @@ class ItemSerializer(BaseModelSerializer):
         "display_name",
         "tag_count",
         "has_media",
+        "expires_at",
         "created",
         "modified",
     ]
@@ -102,6 +105,7 @@ class ItemSerializer(BaseModelSerializer):
             "display_name",
             "tag_count",
             "has_media",
+            "expires_at",
             "created",
             "modified",
         ]

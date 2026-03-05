@@ -521,6 +521,32 @@ class QueryParamTestCase(TestCase):
         self.assertNotIn("name", row)
 
     # ──────────────────────────────────────────────
+    # Group 9b: Calculated TimestampField (expires_at)
+    # ──────────────────────────────────────────────
+
+    def test_expires_at_in_default_response(self):
+        """expires_at (calculated TimestampField) is present by default as an integer epoch."""
+        row = self._get_item(self.i1.id)
+        self.assertIn("expires_at", row)
+        self.assertIsInstance(row["expires_at"], int)
+        # expires_at = created + 30 days, so it must be greater than created
+        self.assertGreater(row["expires_at"], row["created"])
+
+    def test_expires_at_in_fields_subset(self):
+        """?fields=id,expires_at → only id and expires_at returned."""
+        row = self._get_item(self.i1.id, "?fields=id,expires_at")
+        self.assertIn("id", row)
+        self.assertIn("expires_at", row)
+        self.assertIsInstance(row["expires_at"], int)
+        self.assertNotIn("name", row)
+        self.assertNotIn("created", row)
+
+    def test_expires_at_excluded_by_fields(self):
+        """?fields=id,name → expires_at absent (not requested)."""
+        row = self._get_item(self.i1.id, "?fields=id,name")
+        self.assertNotIn("expires_at", row)
+
+    # ──────────────────────────────────────────────
     # Group 10: Ordering (?order=)
     # ──────────────────────────────────────────────
 

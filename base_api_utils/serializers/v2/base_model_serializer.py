@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from .expands import ExpandMapping
 from .query_params import normalize_none, parse_tree
+from ..timestamp_field import TimestampField
 
 
 class AbstractSerializer:
@@ -155,5 +156,5 @@ class AbstractSerializer:
 
 class BaseModelSerializer(AbstractSerializer, serializers.ModelSerializer):
     id = serializers.ReadOnlyField(source="pk")
-    created = serializers.DateTimeField(read_only=True, required=False)
-    modified = serializers.DateTimeField(read_only=True, required=False)
+    created = TimestampField(read_only=True, required=False)
+    modified = TimestampField(read_only=True, required=False)
