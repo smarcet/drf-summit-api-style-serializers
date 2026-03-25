@@ -93,3 +93,48 @@ class ItemSerializer(BaseModelSerializer):
 
     def get_display_name(self, obj):
         return f"{obj.name} (x{obj.quantity})"
+
+
+class ItemCustomExpandSerializer(BaseModelSerializer):
+    """Demonstrates manual expansion using get_expand() and get_child_context().
+
+    Unlike ItemSerializer which uses expand_mappings for declarative expansion,
+    this serializer handles media_upload expansion manually via SerializerMethodField.
+    Use this pattern when expansion requires custom logic (filtering, conditional, etc.).
+    """
+
+    media_upload = serializers.SerializerMethodField()
+    tags = TagSerializer(many=True, read_only=True, required=False)
+
+    allowed_fields = ["id", "name", "quantity", "media_upload_id"]
+    allowed_relations = ["media_upload", "tags"]
+
+    expand_mappings = {
+        "tags": {
+            "type": Many2OneExpandSerializer(),
+            "serializer": TagSerializer,
+            "source": "tags",
+            "verify_relation": True,
+            "orm": {"prefetch_related": ["tags"]},
+        },
+    }
+
+    class Meta:
+        model = Item
+
+    def get_media_upload(self, obj):
+        if not obj.media_upload_id:
+            return None
+
+        # Not expanded → return just the FK id
+        if "media_upload" not in self.get_expand():
+            return obj.media_upload_id
+
+        # Expanded → return full serialized object with scoped child context
+        media = obj.media_upload
+        if not media:
+            return None
+
+        return MediaUploadSerializer(
+            context=self.get_child_context("media_upload")
+        ).to_representation(media)

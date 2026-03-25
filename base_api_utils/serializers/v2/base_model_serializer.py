@@ -162,6 +162,19 @@ class AbstractSerializer:
 
         return fields
 
+    def get_expand(self):
+        """Return relation names requested for expansion at this serializer's level."""
+        return list(self._own_context.get("expand_tree", {}).keys())
+
+    def get_child_context(self, attr):
+        """Build a scoped context for a child serializer being expanded at *attr*.
+
+        Use in custom SerializerMethodField getters:
+            return ChildSerializer(context=self.get_child_context('field_name')).to_representation(obj)
+        """
+        from .expands import _child_context
+        return _child_context(self._own_context, attr)
+
 
 class BaseModelSerializer(AbstractSerializer, serializers.ModelSerializer):
     id = serializers.ReadOnlyField(source="pk")

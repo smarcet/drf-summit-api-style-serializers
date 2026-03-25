@@ -64,3 +64,38 @@ Always declare nested serializers as `read_only` with `required=False`:
 media_upload = MediaUploadSerializer(read_only=True, required=False)
 tags = TagSerializer(many=True, read_only=True, required=False)
 ```
+
+### Custom Expansion Logic
+
+For cases where `expand_mappings` can't handle the expansion (e.g., custom filtering, conditional logic), use `SerializerMethodField` with `get_expand()` and `get_child_context()`:
+
+```python
+class ManagedMediaRequestModuleSerializer(BaseModelSerializer):
+    media_upload = serializers.SerializerMethodField()
+    allowed_relations = ['media_upload']
+
+    def get_media_upload(self, obj):
+        sponsor_id = self.context.get('sponsor_id')
+        if not sponsor_id:
+            return None
+
+        media_upload = obj.get_media_uploads().filter(sponsor_id=sponsor_id).first()
+        if not media_upload:
+            return None
+
+        # Check if expansion is requested
+        if 'media_upload' not in self.get_expand():
+            return media_upload.id  # Not expanded → return just the ID
+
+        # Expanded → return full object with scoped context for nested params
+        return SponsorMediaUploadSerializer(
+            context=self.get_child_context('media_upload')
+        ).to_representation(media_upload)
+```
+
+**Key methods:**
+
+- `self.get_expand()` — returns list of relation names requested at current serializer level
+- `self.get_child_context('attr')` — builds scoped context for child serializer, enabling nested `?fields=`, `?expand=`, and `?relations=`
+
+**⚠️ Important:** Always use `get_child_context()` when instantiating child serializers. Using `self.context` directly works for flat expansions but breaks nested query parameter scoping.

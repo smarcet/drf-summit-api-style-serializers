@@ -5,6 +5,7 @@ from base_api_utils.views import BaseView, ExpandQuerysetOptimizationMixin
 
 from .models import Item, MediaUpload, Owner, Tag
 from .serializers import (
+    ItemCustomExpandSerializer,
     ItemSerializer,
     MediaUploadSerializer,
     OwnerSerializer,
@@ -31,6 +32,30 @@ class ItemViewSet(ExpandQuerysetOptimizationMixin, BaseView):
                 has_media=Q(media_upload_id__isnull=False),
             )
         )
+
+    def bulk_prefetch__media_upload(
+        self, items, expand_subtree, fields_subtree, relations_subtree
+    ):
+        qs = MediaUpload.objects.all()
+        if has_key(expand_subtree, "owner") and has_key(relations_subtree, "owner"):
+            qs = qs.select_related("owner")
+
+        ids = {i.media_upload_id for i in items if getattr(i, "media_upload_id", None)}
+        uploads = {m.id: m for m in qs.filter(id__in=ids)}
+        for i in items:
+            i._prefetched_media_upload = uploads.get(i.media_upload_id)
+
+
+class ItemCustomExpandViewSet(ExpandQuerysetOptimizationMixin, BaseView):
+    """Demonstrates manual expansion via SerializerMethodField + get_expand().
+
+    Same data as ItemViewSet but media_upload uses custom expansion logic
+    instead of declarative expand_mappings.
+    """
+
+    queryset = Item.objects.all().order_by("id")
+    serializer_class = ItemCustomExpandSerializer
+    ordering_fields = {"id": "id", "name": "name", "quantity": "quantity"}
 
     def bulk_prefetch__media_upload(
         self, items, expand_subtree, fields_subtree, relations_subtree

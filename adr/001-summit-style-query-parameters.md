@@ -195,6 +195,41 @@ The field behaves like any other field:
 
 No `expand_mappings` entry is needed — computed fields are not relations.
 
+#### Custom Expansion Logic in SerializerMethodFields
+
+For relations that require custom logic (filtering by context, conditional fetching, etc.), use `get_expand()` and `get_child_context()`:
+
+```python
+class ManagedMediaRequestModuleSerializer(BaseModelSerializer):
+    media_upload = serializers.SerializerMethodField()
+    allowed_relations = ['media_upload']
+
+    def get_media_upload(self, obj):
+        # Custom logic: filter by sponsor_id from context
+        sponsor_id = self.context.get('sponsor_id')
+        if not sponsor_id:
+            return None
+
+        media_upload = obj.get_media_uploads().filter(sponsor_id=sponsor_id).first()
+        if not media_upload:
+            return None
+
+        # Check if expansion is requested using get_expand()
+        if 'media_upload' not in self.get_expand():
+            return media_upload.id
+
+        # Build scoped context for child serializer using get_child_context()
+        return SponsorMediaUploadSerializer(
+            context=self.get_child_context('media_upload')
+        ).to_representation(media_upload)
+```
+
+**Available methods:**
+- `self.get_expand()` — returns list of relation names requested at this serializer's level (`["media_upload", "tags"]`)
+- `self.get_child_context('attr')` — builds scoped context dict for child serializer, enabling nested `?fields=attr.id,attr.url`, `?expand=attr.nested`, and `?relations=attr.nested`
+
+**⚠️ Important:** Always use `get_child_context()` when manually instantiating child serializers. Using `self.context` directly breaks nested query parameter scoping.
+
 ### Step 4: Add queryset annotation fields
 
 Django queryset annotations (`.annotate()`) add computed columns at the database level — aggregates, conditional expressions, subqueries, etc. These work with the query parameter system because annotations become attributes on model instances, which DRF fields can read directly.
