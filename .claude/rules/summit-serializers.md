@@ -56,16 +56,9 @@ Child serializers can have their own `expand_mappings`. The system automatically
 # → Generates: select_related("media_upload__owner")
 ```
 
-### Field Declaration
+### OpenAPI Schema Generation
 
-**Do NOT declare explicit nested serializer fields** for relations handled by `expand_mappings`. The expansion types create fields dynamically:
-
-- `One2ManyExpandSerializer.apply()` creates the serializer field when expanded, or an `IntegerField` for the FK when not
-- `Many2OneExpandSerializer.apply()` replaces the DRF-auto-generated field with the serializer or `PrimaryKeyRelatedField`
-
-Explicit declarations like `media_upload = MediaUploadSerializer(read_only=True, required=False)` are redundant — they get overwritten by `apply()` in all cases.
-
-**Exception:** `SerializerMethodField` for custom expansion logic (see below) — these must be declared since they're not managed by `expand_mappings`.
+`ExpandMappingSerializerExtension` (in `base_api_utils/serializers/v2/spectacular.py`) handles drf-spectacular integration. It builds a synthetic "all expanded" context so the schema shows nested serializer types (`$ref`) instead of integer IDs. No explicit nested serializer field declarations are needed — `expand_mappings` is the single source of truth for both runtime behavior and schema generation.
 
 ### Custom Expansion Logic
 

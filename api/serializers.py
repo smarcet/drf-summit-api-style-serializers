@@ -100,7 +100,6 @@ class ItemCustomExpandSerializer(BaseModelSerializer):
     """
 
     media_upload = serializers.SerializerMethodField()
-
     allowed_fields = ["id", "name", "quantity", "media_upload_id"]
     allowed_relations = ["media_upload", "tags"]
 
