@@ -101,9 +101,6 @@ class OwnerSerializer(BaseModelSerializer):
 
 
 class MediaUploadSerializer(BaseModelSerializer):
-    # Declare the nested serializer field (DRF needs this for expansion)
-    owner = OwnerSerializer(read_only=True, required=False)
-
     # 1. Fields the client can request via ?fields= (relations auto-merged from allowed_relations)
     allowed_fields = ["id", "url", "owner_id", "created", "modified"]
 
@@ -127,8 +124,6 @@ class MediaUploadSerializer(BaseModelSerializer):
 
 
 class ItemSerializer(BaseModelSerializer):
-    media_upload = MediaUploadSerializer(read_only=True, required=False)
-    tags = TagSerializer(many=True, read_only=True, required=False)
     display_name = serializers.SerializerMethodField()  # Computed field
     expires_at = TimestampField(read_only=True, required=False)  # Calculated timestamp
 
@@ -163,6 +158,78 @@ class ItemSerializer(BaseModelSerializer):
     def get_display_name(self, obj):
         return f"{obj.name} (x{obj.quantity})"
 ```
+
+### Serializer Inheritance
+
+All three attributes — `allowed_fields`, `allowed_relations`, and `expand_mappings` — are **merged across the inheritance chain** via MRO (method resolution order). Child classes only need to declare what they **add or override**, not redeclare the parent's values.
+
+#### How merging works
+
+`AbstractSerializer` walks the MRO in reverse (base → child) and collects values from every class:
+
+| Attribute | Merge Strategy | Special Values |
+|-----------|---------------|----------------|
+| `allowed_fields` | Union — appends new fields, skips duplicates | `None` or omitted = allow all; `"__all__"` = explicit alias for allow all |
+| `allowed_relations` | Union — appends new relations, skips duplicates | |
+| `expand_mappings` | Dict merge — child keys override parent keys | `None` value **removes** an inherited mapping |
+
+#### Example — extending a base serializer
+
+```python
+class BaseItemSerializer(BaseModelSerializer):
+    allowed_fields = ["id", "name", "created", "modified"]
+    allowed_relations = ["tags"]
+    expand_mappings = {
+        "tags": {
+            "type": Many2OneExpandSerializer(),
+            "serializer": TagSerializer,
+            "source": "tags",
+            "verify_relation": True,
+            "orm": {"prefetch_related": ["tags"]},
+        }
+    }
+
+    class Meta:
+        model = Item
+
+
+class ExtendedItemSerializer(BaseItemSerializer):
+    # Only declare additions — parent's values are merged in automatically
+    allowed_fields = ["quantity", "media_upload_id"]
+    allowed_relations = ["media_upload"]
+    expand_mappings = {
+        "media_upload": {
+            "type": One2ManyExpandSerializer(),
+            "serializer": MediaUploadSerializer,
+            "original_attribute": "media_upload_id",
+            "source": "media_upload",
+            "verify_relation": True,
+            "orm": {"bulk_prefetch": "media_upload"},
+        }
+    }
+
+    class Meta:
+        model = Item
+
+    # Effective result after merging:
+    # allowed_fields = ["id", "name", "created", "modified", "quantity", "media_upload_id"]
+    # allowed_relations = ["tags", "media_upload"]
+    # expand_mappings = {"tags": {...}, "media_upload": {...}}
+```
+
+#### Removing inherited mappings
+
+Set a key to `None` in `expand_mappings` to remove a parent's mapping:
+
+```python
+class SlimItemSerializer(BaseItemSerializer):
+    expand_mappings = {
+        "tags": None,  # removes parent's tags expansion
+    }
+    # Effective expand_mappings = {} (tags removed, nothing added)
+```
+
+This only works for `expand_mappings`. There is no mechanism to remove individual entries from inherited `allowed_fields` or `allowed_relations` — child classes can only add to those lists.
 
 ### Step 2: Choose the expansion type
 

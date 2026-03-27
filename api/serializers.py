@@ -20,8 +20,6 @@ class OwnerSerializer(BaseModelSerializer):
 
 
 class MediaUploadSerializer(BaseModelSerializer):
-    owner = OwnerSerializer(read_only=True, required=False)
-
     allowed_fields = ["id", "url", "owner_id", "created", "modified"]
     allowed_relations = ["owner"]
     expand_mappings = {
@@ -49,8 +47,6 @@ class TagSerializer(BaseModelSerializer):
 
 
 class ItemSerializer(BaseModelSerializer):
-    media_upload = MediaUploadSerializer(read_only=True, required=False)
-    tags = TagSerializer(many=True, read_only=True, required=False)
     display_name = serializers.SerializerMethodField()
     tag_count = serializers.IntegerField(read_only=True)
     has_media = serializers.BooleanField(read_only=True)
@@ -104,7 +100,6 @@ class ItemCustomExpandSerializer(BaseModelSerializer):
     """
 
     media_upload = serializers.SerializerMethodField()
-    tags = TagSerializer(many=True, read_only=True, required=False)
 
     allowed_fields = ["id", "name", "quantity", "media_upload_id"]
     allowed_relations = ["media_upload", "tags"]

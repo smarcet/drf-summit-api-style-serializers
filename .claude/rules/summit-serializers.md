@@ -58,12 +58,14 @@ Child serializers can have their own `expand_mappings`. The system automatically
 
 ### Field Declaration
 
-Always declare nested serializers as `read_only` with `required=False`:
+**Do NOT declare explicit nested serializer fields** for relations handled by `expand_mappings`. The expansion types create fields dynamically:
 
-```python
-media_upload = MediaUploadSerializer(read_only=True, required=False)
-tags = TagSerializer(many=True, read_only=True, required=False)
-```
+- `One2ManyExpandSerializer.apply()` creates the serializer field when expanded, or an `IntegerField` for the FK when not
+- `Many2OneExpandSerializer.apply()` replaces the DRF-auto-generated field with the serializer or `PrimaryKeyRelatedField`
+
+Explicit declarations like `media_upload = MediaUploadSerializer(read_only=True, required=False)` are redundant — they get overwritten by `apply()` in all cases.
+
+**Exception:** `SerializerMethodField` for custom expansion logic (see below) — these must be declared since they're not managed by `expand_mappings`.
 
 ### Custom Expansion Logic
 
